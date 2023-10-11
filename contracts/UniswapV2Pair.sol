@@ -1,8 +1,7 @@
 pragma solidity 0.8.19;
 
-
 import "./UniswapV2ERC20.sol";
-import "./interfaces/IERC20.sol";
+import "./interfaces/IIERC20.sol";
 
 contract UniswapV2Pair is UniswapV2ERC20 {
 
@@ -10,6 +9,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     address public factory;
+    address public router;
     address public token0;
     address public token1;
 
@@ -23,6 +23,11 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         unlocked = 0;
         _;
         unlocked = 1;
+    }
+
+    modifier onlyRouter() {
+        require(msg.sender == factory, "UniswapV2: Caller is not the router");
+        _;
     }
 
     function min(uint x, uint y) internal pure returns (uint z) {
@@ -63,7 +68,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     }
 
     // update reserves and, on the first call per block, price accumulators
-    function _update(uint balance0, uint balance1, uint112 _reserve0, uint112 _reserve1) private {
+    function _update(uint balance0, uint balance1) private {
         require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "UniswapV2: OVERFLOW");
         reserve0 = uint112(balance0);
         reserve1 = uint112(balance1);
@@ -71,10 +76,10 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function mint(address to) external lock returns (uint liquidity) {
+    function mint(address to) external lock onlyRouter returns (uint liquidity) {
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
-        uint balance0 = IERC20(token0).balanceOf(address(this));
-        uint balance1 = IERC20(token1).balanceOf(address(this));
+        uint balance0 = IIERC20(token0).balanceOf(address(this));
+        uint balance1 = IIERC20(token1).balanceOf(address(this));
         uint amount0 = balance0-_reserve0;
         uint amount1 = balance1-_reserve1;
 
@@ -89,18 +94,18 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         require(liquidity > 0, "UniswapV2: INSUFFICIENT_LIQUIDITY_MINTED");
         _mint(to, liquidity);
 
-        _update(balance0, balance1, _reserve0, _reserve1);
+        _update(balance0, balance1);
 
         emit Mint(msg.sender, amount0, amount1);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function burn(address to) external lock returns (uint amount0, uint amount1) {
+    function burn(address to) external lock onlyRouter returns (uint amount0, uint amount1) {
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
         address _token0 = token0;                                // gas savings
         address _token1 = token1;                                // gas savings
-        uint balance0 = IERC20(_token0).balanceOf(address(this));
-        uint balance1 = IERC20(_token1).balanceOf(address(this));
+        uint balance0 = IIERC20(_token0).balanceOf(address(this));
+        uint balance1 = IIERC20(_token1).balanceOf(address(this));
         uint liquidity = balanceOf[address(this)];
 
         uint _totalSupply = totalSupply; 
@@ -110,16 +115,16 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         _burn(address(this), liquidity);
         _safeTransfer(_token0, to, amount0);
         _safeTransfer(_token1, to, amount1);
-        balance0 = IERC20(_token0).balanceOf(address(this));
-        balance1 = IERC20(_token1).balanceOf(address(this));
+        balance0 = IIERC20(_token0).balanceOf(address(this));
+        balance1 = IIERC20(_token1).balanceOf(address(this));
 
-        _update(balance0, balance1, _reserve0, _reserve1);
+        _update(balance0, balance1);
 
         emit Burn(msg.sender, amount0, amount1, to);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function swap(uint amount0Out, uint amount1Out, address to) external lock {
+    function swap(uint amount0Out, uint amount1Out, address to) external lock onlyRouter {
         require(amount0Out > 0 || amount1Out > 0, "UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT");
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
         require(amount0Out < _reserve0 && amount1Out < _reserve1, "UniswapV2: INSUFFICIENT_LIQUIDITY");
@@ -132,8 +137,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         require(to != _token0 && to != _token1, "UniswapV2: INVALID_TO");
         if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out); // optimistically transfer tokens
         if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out); // optimistically transfer tokens
-        balance0 = IERC20(_token0).balanceOf(address(this));
-        balance1 = IERC20(_token1).balanceOf(address(this));
+        balance0 = IIERC20(_token0).balanceOf(address(this));
+        balance1 = IIERC20(_token1).balanceOf(address(this));
         }
         uint amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
         uint amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
@@ -144,32 +149,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         require(balance0Adjusted*(balance1Adjusted) >= uint(_reserve0)*(_reserve1)*(1000**2), "UniswapV2: K");
         }
 
-        _update(balance0, balance1, _reserve0, _reserve1);
+        _update(balance0, balance1);
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
-
-
-    /*modifier ensure(uint deadline) {
-        require(deadline >= block.timestamp, "UniswapV2Router: EXPIRED");
-        _;
-    }
-
-    function swapTokensForTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[2] calldata path,
-        address to,
-        uint deadline
-    ) external ensure(deadline) returns (uint[2] memory amounts) {
-        amounts[0] = amountIn;
-        (uint reserveIn, uint reserveOut) = UniswapV2Library.getReserves(factory, path[0], path[1]);
-        amounts[1] = getAmountOut(amounts[0], reserveIn, reserveOut);
-        require(amounts[amounts.length - 1] >= amountOutMin, "UniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
-        IERC20(path[0]).safeTransferFrom(
-            msg.sender, UniswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]
-        );
-        _swap(amounts, path, to);
-    } */
-
-
 }

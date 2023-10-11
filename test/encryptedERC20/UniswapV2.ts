@@ -37,21 +37,17 @@ describe("Regular UniswapV2", function () {
     const uniswapFactoryFactory = await ethers.getContractFactory("UniswapV2Factory");
     const uniswapFactory = await uniswapFactoryFactory.connect(signers.alice).deploy();
     await uniswapFactory.waitForDeployment();
-    console.log("UNISWAP FACTORY ADDRESS  :  ", await uniswapFactory.getAddress());
+    const uniswapFactoryAddress = await uniswapFactory.getAddress();
+    console.log("UNISWAP FACTORY ADDRESS  :  ", uniswapFactoryAddress);
 
-    const uniswapV2Router02Factory = await ethers.getContractFactory("UniswapV2Router02");
-    const uniswapV2Router02 = await uniswapV2Router02Factory.deploy(await uniswapFactory.getAddress());
-    await uniswapV2Router02.waitForDeployment();
-    const routerAddress = await uniswapV2Router02.getAddress();
-
-    const tx3 = await tokenA.approve(routerAddress, 20000000n);
+    const tx3 = await tokenA.approve(uniswapFactoryAddress, 20000000n);
     await tx3.wait();
-    const tx4 = await tokenB.approve(routerAddress, 10000000n);
+    const tx4 = await tokenB.approve(uniswapFactoryAddress, 10000000n);
     await tx4.wait();
 
     const currentTime = (await ethers.provider.getBlock("latest"))?.timestamp ?? 0;
 
-    const tx5 = await uniswapV2Router02.addLiquidity(
+    const tx5 = await uniswapFactory.addLiquidity(
       tokenAAddress,
       tokenBAddress,
       20000000n,
@@ -70,9 +66,9 @@ describe("Regular UniswapV2", function () {
     console.log("XY before swap : ", XY_before);
 
     await tokenA.transfer(bobAddress, 100000n);
-    const tx6 = await tokenA.connect(signers.bob).approve(routerAddress, 100000n);
+    const tx6 = await tokenA.connect(signers.bob).approve(uniswapFactoryAddress, 100000n);
     await tx6.wait();
-    const tx7 = await uniswapV2Router02
+    const tx7 = await uniswapFactory
       .connect(signers.bob)
       .swapExactTokensForTokens(100000n, 0n, [tokenAAddress, tokenBAddress], bobAddress, currentTime + 120);
     await tx7.wait();
@@ -80,9 +76,9 @@ describe("Regular UniswapV2", function () {
     const XY_after = (await tokenA.balanceOf(pairContractAddress)) * (await tokenB.balanceOf(pairContractAddress));
     console.log("XY before swap : ", XY_after);
 
-    const tx8 = await tokenB.connect(signers.bob).approve(routerAddress, 100000000n);
+    const tx8 = await tokenB.connect(signers.bob).approve(uniswapFactoryAddress, 100000000n);
     await tx8.wait();
-    const tx9 = await uniswapV2Router02
+    const tx9 = await uniswapFactory
       .connect(signers.bob)
       .swapTokensForExactTokens(1000n, 10000000000000n, [tokenBAddress, tokenAAddress], bobAddress, currentTime + 180);
     await tx9.wait();
