@@ -40,25 +40,19 @@ describe("EncryptedERC20", function () {
     await uniswapFactory.waitForDeployment();
     console.log("UNISWAP FACTORY ADDRESS  :  ", await uniswapFactory.getAddress());
 
-    let tx3 = await uniswapFactory.createPair(tokenAAddress, tokenBAddress);
-    await tx3.wait();
-
-    const pairContractAddress = await uniswapFactory.getPair(tokenAAddress, tokenBAddress);
-    console.log("Pair Contract Address : ", pairContractAddress);
-
     const uniswapV2Router02Factory = await ethers.getContractFactory("UniswapV2Router02");
     const uniswapV2Router02 = await uniswapV2Router02Factory.deploy(await uniswapFactory.getAddress());
     await uniswapV2Router02.waitForDeployment();
     const routerAddress = await uniswapV2Router02.getAddress();
 
-    const tx4 = await tokenA.approve(routerAddress, 20000000n);
+    const tx3 = await tokenA.approve(routerAddress, 20000000n);
+    await tx3.wait();
+    const tx4 = await tokenB.approve(routerAddress, 10000000n);
     await tx4.wait();
-    const tx5 = await tokenB.approve(routerAddress, 10000000n);
-    await tx5.wait();
 
     const currentTime = (await ethers.provider.getBlock("latest"))?.timestamp ?? 0;
 
-    const tx6 = await uniswapV2Router02.addLiquidity(
+    const tx5 = await uniswapV2Router02.addLiquidity(
       tokenAAddress,
       tokenBAddress,
       20000000n,
@@ -68,28 +62,31 @@ describe("EncryptedERC20", function () {
       aliceAddress,
       currentTime + 60,
     );
-    await tx6.wait();
+    await tx5.wait(); // create pair + add initial liquidity in a single tx
+
+    const pairContractAddress = await uniswapFactory.getPair(tokenAAddress, tokenBAddress);
+    console.log("Pair Contract Address : ", pairContractAddress);
 
     const XY_before = (await tokenA.balanceOf(pairContractAddress)) * (await tokenB.balanceOf(pairContractAddress));
     console.log("XY before swap : ", XY_before);
 
     await tokenA.transfer(bobAddress, 100000n);
-    const tx7 = await tokenA.connect(signers.bob).approve(routerAddress, 100000n);
-    await tx7.wait();
-    const tx8 = await uniswapV2Router02
+    const tx6 = await tokenA.connect(signers.bob).approve(routerAddress, 100000n);
+    await tx6.wait();
+    const tx7 = await uniswapV2Router02
       .connect(signers.bob)
       .swapExactTokensForTokens(100000n, 0n, [tokenAAddress, tokenBAddress], bobAddress, currentTime + 120);
-    await tx8.wait();
+    await tx7.wait();
     console.log("bob bal B : ", await tokenB.balanceOf(bobAddress));
     const XY_after = (await tokenA.balanceOf(pairContractAddress)) * (await tokenB.balanceOf(pairContractAddress));
     console.log("XY before swap : ", XY_after);
 
-    const tx9 = await tokenB.connect(signers.bob).approve(routerAddress, 100000000n);
-    await tx9.wait();
-    const tx10 = await uniswapV2Router02
+    const tx8 = await tokenB.connect(signers.bob).approve(routerAddress, 100000000n);
+    await tx8.wait();
+    const tx9 = await uniswapV2Router02
       .connect(signers.bob)
       .swapTokensForExactTokens(1000n, 10000000000000n, [tokenBAddress, tokenAAddress], bobAddress, currentTime + 180);
-    await tx10.wait();
+    await tx9.wait();
 
     console.log("bob bal B after second swap : ", await tokenB.balanceOf(bobAddress));
     console.log("bob bal A after second swap : ", await tokenA.balanceOf(bobAddress));
