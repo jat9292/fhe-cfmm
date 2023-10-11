@@ -69,7 +69,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "local",
+  defaultNetwork: "hardhat",
   namedAccounts: {
     deployer: 0,
   },

@@ -6,11 +6,10 @@ import "fhevm/abstracts/EIP712WithModifier.sol";
 
 import "fhevm/lib/TFHE.sol";
 
-contract EncryptedERC20 is EIP712WithModifier {
+contract EncryptedERC20 is EIP712WithModifier { // Not really an ERC20 : missing events, missing boolean returns on transfers and approvals, not same function signatures.
     euint32 private totalSupply;
-    string public constant name = "Naraggara"; // City of Zama's battle
-    string public constant symbol = "NARA";
-    uint8 public constant decimals = 18;
+    string public name; // City of Zama's battle
+    string public symbol;
 
     // used for output authorization
     bytes32 private DOMAIN_SEPARATOR;
@@ -24,15 +23,20 @@ contract EncryptedERC20 is EIP712WithModifier {
     // The owner of the contract.
     address public contractOwner;
 
-    constructor() EIP712WithModifier("Authorization token", "1") {
+    constructor(string memory _name, string memory _symbol) EIP712WithModifier("Authorization token", "1") {
         contractOwner = msg.sender;
+        name = _name;
+        symbol = _symbol;
     }
 
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) public onlyContractOwner {
         euint32 amount = TFHE.asEuint32(encryptedAmount);
         balances[contractOwner] = balances[contractOwner] + amount;
+        euint32 totalSupply_ = totalSupply;
         totalSupply = totalSupply + amount;
+        require(TFHE.decrypt(TFHE.le(totalSupply_, totalSupply))); // added this check to avoid supply overflow
+
     }
 
     // Transfers an encrypted amount from the message sender address to the `to` address.

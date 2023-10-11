@@ -1,46 +1,69 @@
 import { expect } from "chai";
+import { Signer } from "ethers";
 import { ethers } from "hardhat";
 
+import { EncryptedERC20 } from "../../types/contracts/EncryptedERC20";
 import { createInstances } from "../instance";
-import { getSigners } from "../signers";
+import { Signers, getSigners } from "../signers";
+import { FhevmInstances } from "../types";
 import { createTransaction, waitForBlock } from "../utils";
-import { deployEncryptedERC20Fixture } from "./EncryptedERC20.fixture";
 
-describe("EncryptedERC20", function () {
-  before(async function () {
-    this.signers = await getSigners(ethers);
+describe("EncryptedERC20", async () => {
+  let signers: Signers;
+  let tokenA: EncryptedERC20;
+  let tokenB: EncryptedERC20;
+  let instancesTokenA: FhevmInstances;
+  let instancesTokenB: FhevmInstances;
+  let tokenAAddress: string;
+  let tokenBAddress: string;
+
+  before(async () => {
+    signers = await getSigners(ethers);
+    const EncryptedERC20Factory = await ethers.getContractFactory("EncryptedERC20");
+    tokenA = await EncryptedERC20Factory.connect(signers.alice).deploy("EncTokenA", "ETA");
+    await tokenA.waitForDeployment();
+    tokenB = await EncryptedERC20Factory.connect(signers.alice).deploy("EncTokenB", "ETB");
+    await tokenB.waitForDeployment();
+    tokenAAddress = await tokenA.getAddress();
+    tokenBAddress = await tokenB.getAddress();
+
+    instancesTokenA = await createInstances(tokenAAddress, ethers, signers);
+    instancesTokenB = await createInstances(tokenBAddress, ethers, signers);
   });
 
-  beforeEach(async function () {
-    const contract = await deployEncryptedERC20Fixture();
-    this.contractAddress = await contract.getAddress();
-    console.log("ERC20 ADDRESS  :  ", this.contractAddress);
-    this.erc20 = contract;
-    this.instances = await createInstances(this.contractAddress, ethers, this.signers);
-  });
+  it("should transfer tokens between two users", async () => {
+    //let currentBlockNumber = await ethers.provider.getBlockNumber();
+    //await waitForBlock(BigInt(currentBlockNumber + 2), ethers); // to make sure to send next the following swap transactions in a single same block
 
-  it("should transfer tokens between two users", async function () {
-    let currentBlockNumber = await ethers.provider.getBlockNumber();
-    await waitForBlock(BigInt(currentBlockNumber + 2), ethers); // to make sure to send next the following swap transactions in a single same block
-    console.time("Encrypt Duration");
-    const encryptedAmount = this.instances.alice.encrypt32(10000);
-    console.timeEnd("Encrypt Duration");
-    console.log("Encrypted amount : ", encryptedAmount);
+    let encryptedAmount = instancesTokenA.alice.encrypt32(4_294_967_295); // supply is type(uint32).max
+    const tx1 = await createTransaction(tokenA.mint, encryptedAmount);
+    await tx1.wait();
 
-    console.time("Mint tx Duration");
-    const transaction = await createTransaction(this.erc20.mint, encryptedAmount);
-    //await transaction.wait();
-    console.timeEnd("Mint tx Duration");
-    //await transaction.wait();
-    console.time("Transfer tx Duration");
-    const encryptedTransferAmount = this.instances.alice.encrypt32(1337);
-    const tx = await createTransaction(
-      this.erc20["transfer(address,bytes)"],
-      this.signers.bob.address,
+    encryptedAmount = instancesTokenB.alice.encrypt32(4_294_967_295); // supply is type(uint32).max
+    const tx2 = await createTransaction(tokenB.mint, encryptedAmount);
+    await tx2.wait();
+
+    let encryptedTransferAmount = instancesTokenA.alice.encrypt32(100_000_000);
+    await createTransaction(tokenA["transfer(address,bytes)"], signers.bob.address, encryptedTransferAmount);
+    encryptedTransferAmount = instancesTokenB.alice.encrypt32(100_000_000);
+    await createTransaction(tokenB["transfer(address,bytes)"], signers.bob.address, encryptedTransferAmount);
+
+    encryptedTransferAmount = instancesTokenA.alice.encrypt32(100_000_000);
+    await createTransaction(tokenA["transfer(address,bytes)"], signers.carol.address, encryptedTransferAmount);
+    encryptedTransferAmount = instancesTokenB.alice.encrypt32(100_000_000);
+    const tx3 = await createTransaction(
+      tokenB["transfer(address,bytes)"],
+      signers.carol.address,
       encryptedTransferAmount,
     );
-    await tx.wait();
-    console.timeEnd("Transfer tx Duration");
+    await tx3.wait();
+
+    const carolTokenB = tokenB.connect(signers.carol);
+    const tokenCarol = instancesTokenB.carol.getTokenSignature(tokenBAddress)!;
+    const encryptedBalBCarol = await carolTokenB.balanceOf(tokenCarol.publicKey, tokenCarol.signature);
+    // Decrypt the balance
+    const balanceCarol = instancesTokenB.carol.decrypt(tokenBAddress, encryptedBalBCarol);
+    expect(balanceCarol).to.equal(100_000_000);
   });
 });
 /*

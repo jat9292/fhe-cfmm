@@ -6,7 +6,7 @@ import "./interfaces/IERC20.sol";
 
 contract UniswapV2Pair is UniswapV2ERC20 {
 
-    uint public constant MINIMUM_LIQUIDITY = 10**3;
+    uint public constant MINIMUM_LIQUIDITY = 100;
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     address public factory;
@@ -15,10 +15,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
     uint112 private reserve0;           // uses single storage slot, accessible via getReserves
     uint112 private reserve1;           // uses single storage slot, accessible via getReserves
-    uint32  private blockTimestampLast; // uses single storage slot, accessible via getReserves
 
-    uint public price0CumulativeLast;
-    uint public price1CumulativeLast;
 
     uint private unlocked = 1;
     modifier lock() {
@@ -32,24 +29,9 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         z = x < y ? x : y;
     }
 
-    // babylonian method (https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Babylonian_method)
-    function sqrt(uint y) internal pure returns (uint z) {
-        if (y > 3) {
-            z = y;
-            uint x = y / 2 + 1;
-            while (x < z) {
-                z = x;
-                x = (y / x + x) / 2;
-            }
-        } else if (y != 0) {
-            z = 1;
-        }
-    }
-
-    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1, uint32 _blockTimestampLast) {
+    function getReserves() public view returns (uint112 _reserve0, uint112 _reserve1) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
-        _blockTimestampLast = blockTimestampLast;
     }
 
     function _safeTransfer(address token, address to, uint value) private {
@@ -83,22 +65,14 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     // update reserves and, on the first call per block, price accumulators
     function _update(uint balance0, uint balance1, uint112 _reserve0, uint112 _reserve1) private {
         require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "UniswapV2: OVERFLOW");
-        uint32 blockTimestamp = uint32(block.timestamp % 2**32);
-        uint32 timeElapsed = blockTimestamp - blockTimestampLast; // overflow is desired
-        if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
-            // * never overflows, and + overflow is desired
-            price0CumulativeLast += uint((uint224(_reserve1)*2**112)/uint224(_reserve0)) * timeElapsed;
-            price1CumulativeLast += uint((uint224(_reserve0)*2**112)/uint224(_reserve1)) * timeElapsed;
-        }
         reserve0 = uint112(balance0);
         reserve1 = uint112(balance1);
-        blockTimestampLast = blockTimestamp;
         emit Sync(reserve0, reserve1);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
     function mint(address to) external lock returns (uint liquidity) {
-        (uint112 _reserve0, uint112 _reserve1,) = getReserves(); // gas savings
+        (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
         uint balance0 = IERC20(token0).balanceOf(address(this));
         uint balance1 = IERC20(token1).balanceOf(address(this));
         uint amount0 = balance0-_reserve0;
@@ -106,8 +80,9 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
         uint _totalSupply = totalSupply;
         if (_totalSupply == 0) {
-            liquidity = sqrt(amount0*(amount1))-(MINIMUM_LIQUIDITY);
-           _mint(address(0), MINIMUM_LIQUIDITY); // permanently lock the first MINIMUM_LIQUIDITY tokens
+            require(amount0>MINIMUM_LIQUIDITY && amount1>MINIMUM_LIQUIDITY, "Initial liquidity too small");
+            liquidity = (amount0/2)+(amount1/2)-MINIMUM_LIQUIDITY; // easier in FHE, instead of sqrt
+            _mint(address(0), MINIMUM_LIQUIDITY); // permanently lock the first MINIMUM_LIQUIDITY tokens
         } else {
             liquidity = min(amount0*(_totalSupply) / _reserve0, amount1*(_totalSupply) / _reserve1);
         }
@@ -121,7 +96,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
     // this low-level function should be called from a contract which performs important safety checks
     function burn(address to) external lock returns (uint amount0, uint amount1) {
-        (uint112 _reserve0, uint112 _reserve1,) = getReserves(); // gas savings
+        (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
         address _token0 = token0;                                // gas savings
         address _token1 = token1;                                // gas savings
         uint balance0 = IERC20(_token0).balanceOf(address(this));
@@ -146,7 +121,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
     // this low-level function should be called from a contract which performs important safety checks
     function swap(uint amount0Out, uint amount1Out, address to) external lock {
         require(amount0Out > 0 || amount1Out > 0, "UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT");
-        (uint112 _reserve0, uint112 _reserve1,) = getReserves(); // gas savings
+        (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
         require(amount0Out < _reserve0 && amount1Out < _reserve1, "UniswapV2: INSUFFICIENT_LIQUIDITY");
 
         uint balance0;
@@ -172,4 +147,29 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         _update(balance0, balance1, _reserve0, _reserve1);
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }
+
+
+    /*modifier ensure(uint deadline) {
+        require(deadline >= block.timestamp, "UniswapV2Router: EXPIRED");
+        _;
+    }
+
+    function swapTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[2] calldata path,
+        address to,
+        uint deadline
+    ) external ensure(deadline) returns (uint[2] memory amounts) {
+        amounts[0] = amountIn;
+        (uint reserveIn, uint reserveOut) = UniswapV2Library.getReserves(factory, path[0], path[1]);
+        amounts[1] = getAmountOut(amounts[0], reserveIn, reserveOut);
+        require(amounts[amounts.length - 1] >= amountOutMin, "UniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT");
+        IERC20(path[0]).safeTransferFrom(
+            msg.sender, UniswapV2Library.pairFor(factory, path[0], path[1]), amounts[0]
+        );
+        _swap(amounts, path, to);
+    } */
+
+
 }
