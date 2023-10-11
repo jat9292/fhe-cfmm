@@ -4,9 +4,8 @@ import { ethers } from "hardhat";
 import { createInstances } from "../instance";
 import { getSigners } from "../signers";
 import { createTransaction, waitForBlock } from "../utils";
-import { deployEncryptedERC20Fixture } from "./EncryptedERC20.fixture";
 
-describe("EncryptedERC20", function () {
+describe("Regular UniswapV2", function () {
   before(async function () {
     this.signers = await getSigners(ethers);
   });
