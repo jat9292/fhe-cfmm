@@ -10,7 +10,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
     address public factory;
     address public router;
-    address public token0;
+    address public token0; // we suppose token0 and token1 are addresses of EncryptedERC20 contracts
     address public token1;
 
     uint112 private reserve0;           // uses single storage slot, accessible via getReserves
