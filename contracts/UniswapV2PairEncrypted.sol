@@ -1,11 +1,23 @@
 pragma solidity 0.8.19;
 
 import "./UniswapV2ERC20.sol";
-import "./interfaces/IIERC20.sol";
+import "./interfaces/IEncryptedERC20.sol";
+import "fhevm/lib/TFHE.sol";
 
-contract UniswapV2Pair is UniswapV2ERC20 {
+/*
+The main problem with the current implementation is that at the end of each block, all the
+transferred amounts sent in any mint, burn or swap transaction are decrypted to update the reserves of the pool (via
+calls to the special _balanceOf_ function by the pair contract with the decryptor role), so confidentiality of trade amounts is
+indeed lost, post-block confirmation. TODO : Another implementation would batch queues of pending transactions once in a
+while **before** updating the reserves: the pool reserves would be updated only **after** the balances of all the
+traders in the queue would be homomorphically updated so there would be almost no loss of confidentiality. Despite
+this issue, the current implementation is already useful in order to avoid the front-running problem that is
+plaguing DeFi.
+*/
 
-    uint public constant MINIMUM_LIQUIDITY = 100;
+contract UniswapV2PairEncrypted is UniswapV2ERC20 {
+
+    uint public constant MINIMUM_LIQUIDITY = 100; // to avoid inflation attack https://mixbytes.io/blog/overview-of-the-inflation-attack#:~:text=An%20inflation%20attack%20is%20a,significant%20losses%20for%20unsuspecting%20investors.
     bytes4 private constant SELECTOR = bytes4(keccak256(bytes("transfer(address,uint256)")));
 
     address public factory;
@@ -39,22 +51,9 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         _reserve1 = reserve1;
     }
 
-    function _safeTransfer(address token, address to, uint value) private {
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(SELECTOR, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), "UniswapV2: TRANSFER_FAILED");
-    }
-
-    event Mint(address indexed sender, uint amount0, uint amount1);
-    event Burn(address indexed sender, uint amount0, uint amount1, address indexed to);
-    event Swap(
-        address indexed sender,
-        uint amount0In,
-        uint amount1In,
-        uint amount0Out,
-        uint amount1Out,
-        address indexed to
-    );
-    event Sync(uint112 reserve0, uint112 reserve1);
+    event Mint(address indexed sender, address indexed to);
+    event Burn(address indexed sender, address indexed to);
+    event Swap(address indexed sender, address indexed to);
 
     constructor() {
         factory = msg.sender;
@@ -72,14 +71,14 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "UniswapV2: OVERFLOW");
         reserve0 = uint112(balance0);
         reserve1 = uint112(balance1);
-        emit Sync(reserve0, reserve1);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
     function mint(address to) external lock onlyRouter returns (uint liquidity) {
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
-        uint balance0 = IIERC20(token0).balanceOf(address(this));
-        uint balance1 = IIERC20(token1).balanceOf(address(this));
+        uint balance0 = IEncryptedERC20(token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        uint balance1 = IEncryptedERC20(token1).balanceOf(address(this));
+
         uint amount0 = balance0-_reserve0;
         uint amount1 = balance1-_reserve1;
 
@@ -96,16 +95,15 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
         _update(balance0, balance1);
 
-        emit Mint(msg.sender, amount0, amount1);
+        emit Mint(msg.sender, to);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function burn(address to) external lock onlyRouter returns (uint amount0, uint amount1) {
-        (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
+    function burn(address to) external lock onlyRouter returns (uint amount0, uint amount1)  {
         address _token0 = token0;                                // gas savings
         address _token1 = token1;                                // gas savings
-        uint balance0 = IIERC20(_token0).balanceOf(address(this));
-        uint balance1 = IIERC20(_token1).balanceOf(address(this));
+        uint balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        uint balance1 = IEncryptedERC20(_token1).balanceOf(address(this));
         uint liquidity = balanceOf[address(this)];
 
         uint _totalSupply = totalSupply; 
@@ -113,21 +111,26 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         amount1 = liquidity*balance1 / _totalSupply; // using balances ensures pro-rata distribution
         require(amount0 > 0 && amount1 > 0, "UniswapV2: INSUFFICIENT_LIQUIDITY_BURNED");
         _burn(address(this), liquidity);
-        _safeTransfer(_token0, to, amount0);
-        _safeTransfer(_token1, to, amount1);
-        balance0 = IIERC20(_token0).balanceOf(address(this));
-        balance1 = IIERC20(_token1).balanceOf(address(this));
 
+        euint32 amount0Enc = TFHE.asEuint32(amount0); // using balances ensures pro-rata distribution
+        euint32 amount1Enc = TFHE.asEuint32(amount1); // using balances ensures pro-rata distribution
+        IEncryptedERC20(_token0).transfer(to, amount0Enc);
+        IEncryptedERC20(_token1).transfer(to, amount1Enc);
+
+        balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); 
+        balance1 = IEncryptedERC20(_token1).balanceOf(address(this)); 
+                                                                      
         _update(balance0, balance1);
 
-        emit Burn(msg.sender, amount0, amount1, to);
+        emit Burn(msg.sender, to);
     }
 
     // this low-level function should be called from a contract which performs important safety checks
-    function swap(uint amount0Out, uint amount1Out, address to) external lock onlyRouter {
+    function swap(euint32 amount0OutEnc, euint32 amount1OutEnc, uint32 amount0Out, uint32 amount1Out, address to) external lock onlyRouter {
         require(amount0Out > 0 || amount1Out > 0, "UniswapV2: INSUFFICIENT_OUTPUT_AMOUNT");
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
-        require(amount0Out < _reserve0 && amount1Out < _reserve1, "UniswapV2: INSUFFICIENT_LIQUIDITY");
+        
+        require((uint112(amount0Out) < _reserve0) && (uint112(amount1Out) < _reserve1), "UniswapV2: INSUFFICIENT_LIQUIDITY");
 
         uint balance0;
         uint balance1;
@@ -135,13 +138,14 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         address _token0 = token0;
         address _token1 = token1;
         require(to != _token0 && to != _token1, "UniswapV2: INVALID_TO");
-        if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out); // optimistically transfer tokens
-        if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out); // optimistically transfer tokens
-        balance0 = IIERC20(_token0).balanceOf(address(this));
-        balance1 = IIERC20(_token1).balanceOf(address(this));
+        IEncryptedERC20(_token0).transfer(to, amount0OutEnc); // even if amount is null, do a transfer to obfuscate trade direction
+        IEncryptedERC20(_token1).transfer(to, amount1OutEnc); // even if amount is null, do a transfer to obfuscate trade direction
+        balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        balance1 = IEncryptedERC20(_token1).balanceOf(address(this));
         }
+
         uint amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;
-        uint amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
+                uint amount1In = balance1 > _reserve1 - amount1Out ? balance1 - (_reserve1 - amount1Out) : 0;
         require(amount0In > 0 || amount1In > 0, "UniswapV2: INSUFFICIENT_INPUT_AMOUNT");
         { // scope for reserve{0,1}Adjusted, avoids stack too deep errors
         uint balance0Adjusted = balance0*1000-(amount0In*(3));
@@ -150,6 +154,9 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         }
 
         _update(balance0, balance1);
-        emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
+        emit Swap(msg.sender, to);
+
+
+
     }
 }
