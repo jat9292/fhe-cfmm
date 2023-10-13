@@ -54,7 +54,7 @@ contract UniswapV2FactoryEncrypted {
         address tokenB,
         bytes calldata encryptedAmountA,
         bytes calldata encryptedAmountB,
-        uint256 minLiquidity, // for slippage protection
+        bytes calldata encryptedMinLiquidity, // for slippage protection
         address to,
         uint deadline
     ) external ensure(deadline) returns (uint liquidity) {
@@ -65,20 +65,21 @@ contract UniswapV2FactoryEncrypted {
         IEncryptedERC20(tokenA).transferFrom(msg.sender, pair, TFHE.asEuint32(encryptedAmountA));
         IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, TFHE.asEuint32(encryptedAmountB));
         liquidity = IUniswapV2PairEncrypted(pair).mint(to);
-        require(liquidity>=minLiquidity,"Insufficient tokens sent");
+        require(TFHE.decrypt(TFHE.ge(TFHE.asEuint32(liquidity),TFHE.asEuint32(encryptedMinLiquidity))),"Insufficient tokens sent");
     }
 
     // **** REMOVE LIQUIDITY ****
     function removeLiquidity(
         address tokenA,
         address tokenB,
-        uint liquidity,
+        bytes calldata encryptedLiquidity,
         bytes calldata encryptedAmountMinA,  // for slippage protection
         bytes calldata encryptedAmountMinB,  // for slippage protection
         address to,
         uint deadline
     ) public ensure(deadline) returns (uint amountA, uint amountB) {
         address pair =  getPair[tokenA][tokenB];
+        uint liquidity = uint(TFHE.decrypt(TFHE.asEuint32(encryptedLiquidity)));
         IUniswapV2PairEncrypted(pair).transferFrom(msg.sender, pair, liquidity); // send liquidity to pair
         (uint amount0, uint amount1) = IUniswapV2PairEncrypted(pair).burn(to);
         (address token0,) = sortTokens(tokenA, tokenB);

@@ -71,7 +71,7 @@ describe("Private UniswapV2", function () {
     let encryptedBalBCarol = await carolTokenB["balanceOf(bytes32,bytes)"](tokenCarol.publicKey, tokenCarol.signature);
     let balanceCarol = instancesTokenB.carol.decrypt(tokenBAddress, encryptedBalBCarol);
     expect(balanceCarol).to.equal(100_000);
-    console.log("Alice succesfully transferred 100000 EncryptedtokenA and 100000 EncryptedtokenB to Carole");
+    console.log("Alice succesfully transferred 100_000 EncryptedtokenA and 100_000 EncryptedtokenB to Carol");
 
     // ALICE deploys the Uniswap Factory
     const uniswapFactoryFactory = await ethers.getContractFactory("UniswapV2FactoryEncrypted");
@@ -82,7 +82,7 @@ describe("Private UniswapV2", function () {
 
     encryptedTransferAmount = instancesTokenA.alice.encrypt32(200000000);
     await tokenA.approve(uniswapFactoryAddress, encryptedTransferAmount);
-    encryptedTransferAmount = instancesTokenA.alice.encrypt32(100000000);
+    encryptedTransferAmount = instancesTokenB.alice.encrypt32(100000000);
     await tokenB.approve(uniswapFactoryAddress, encryptedTransferAmount);
 
     // ALICE creates the tokenA/tokenB Uniswap pool
@@ -100,16 +100,18 @@ describe("Private UniswapV2", function () {
     console.log("Pair is decryptor of token B", await tokenB.decryptors(pairAddress));
 
     // ALICE add the first amount of liquidity in the pool
-    let encryptedTransferAmountA = instancesTokenA.alice.encrypt32(20_000_000);
-    let encryptedTransferAmountB = instancesTokenB.alice.encrypt32(10_000_000);
+    const instancesUniFactory = await createInstances(uniswapFactoryAddress, ethers, signers);
+    let encryptedTransferAmountA = instancesUniFactory.alice.encrypt32(20_000_000);
+    let encryptedTransferAmountB = instancesUniFactory.alice.encrypt32(10_000_000);
+    let encryptedMinLiquidity = instancesUniFactory.alice.encrypt32(1500000 - 100); // we remove 100 = MINIMUM_LIQUIDITY during liquidity initialization
     const currentTime = (await ethers.provider.getBlock("latest"))?.timestamp ?? 0;
     const tx7 = await createTransaction(
-      uniswapFactory["addLiquidity(address,address,bytes,bytes,uint256,address,uint256)"],
+      uniswapFactory["addLiquidity(address,address,bytes,bytes,bytes,address,uint256)"],
       tokenAAddress,
       tokenBAddress,
       encryptedTransferAmountA,
       encryptedTransferAmountB,
-      1500000 - 100, // we remove 100 = MINIMUM_LIQUIDITY during liquidity initialization
+      encryptedMinLiquidity,
       aliceAddress,
       currentTime + 120,
     );
@@ -133,19 +135,20 @@ describe("Private UniswapV2", function () {
     console.log("balance EncryptedtokenB Alice ", balanceBAlice);
 
     // ALICE burns a small amount of liquidity
-    encryptedTransferAmountA = instancesTokenA.alice.encrypt32(2000);
-    encryptedTransferAmountB = instancesTokenB.alice.encrypt32(1000);
+    const encryptedMinTransferAmountA = instancesUniFactory.alice.encrypt32(2000);
+    const encryptedMinTransferAmountB = instancesUniFactory.alice.encrypt32(1000);
+    const encryptedLiquidity = instancesUniFactory.alice.encrypt32(1500);
     const tx8 = await uniswapPair.approve(uniswapFactoryAddress, 1500);
     await tx8.wait();
-    const tx9 = await createTransaction(
-      uniswapFactory["removeLiquidity(address,address,uint256,bytes,bytes,address,uint256)"],
+    const tx9 = await uniswapFactory.removeLiquidity(
       tokenAAddress,
       tokenBAddress,
-      1500,
-      encryptedTransferAmountA,
-      encryptedTransferAmountB,
+      encryptedLiquidity,
+      encryptedMinTransferAmountA,
+      encryptedMinTransferAmountB,
       aliceAddress,
       currentTime + 180,
+      { gasLimit: 5000000 },
     );
     await tx9.wait();
     console.log(
@@ -181,22 +184,22 @@ describe("Private UniswapV2", function () {
     console.log("Now Bob and Carol pre-compute their inputs to initate 2 swaps in the same block");
     // Bob preparation : Bob wants to sell 1000 tokenB with a max slippage of 1%
     console.log("Bob preparation : Bob wants to sell 1000 tokenB with a max slippage of 1%");
-    const encryptedAmountAInBob = instancesTokenA.bob.encrypt32(0);
-    const encryptedAmountBInBob = instancesTokenB.bob.encrypt32(1000);
+    const encryptedAmountAInBob = instancesUniFactory.bob.encrypt32(0);
+    const encryptedAmountBInBob = instancesUniFactory.bob.encrypt32(1000);
     const encryptedAmountAOutMinBob =
-      instancesTokenA.bob.encrypt32(
+      instancesUniFactory.bob.encrypt32(
         1980,
       ); /* 1 tokenB has same marginal value as 2 tokenA, and 20=(1% of 2*1000) so Bob would accept
             a maximum slippage of 1% here (so approx 0.7% more than the 0.3% fee, to protect himself if some other transactions happen in the same block ) */
-    const encryptedAmountBOutMinBob = instancesTokenB.bob.encrypt32(0);
+    const encryptedAmountBOutMinBob = instancesUniFactory.bob.encrypt32(0);
 
     // Carol preparation : Carol wants to sell 4000 tokenA with a max slippage of 1%
     console.log("Carol preparation : Carol wants to sell 4000 tokenA with a max slippage of 0.75%");
-    const encryptedAmountAInCarol = instancesTokenA.carol.encrypt32(4000);
-    const encryptedAmountBInCarol = instancesTokenB.carol.encrypt32(0);
-    const encryptedAmountAOutMinCarol = instancesTokenA.carol.encrypt32(0);
+    const encryptedAmountAInCarol = instancesUniFactory.carol.encrypt32(4000);
+    const encryptedAmountBInCarol = instancesUniFactory.carol.encrypt32(0);
+    const encryptedAmountAOutMinCarol = instancesUniFactory.carol.encrypt32(0);
     const encryptedAmountBOutMinCarol =
-      instancesTokenB.carol.encrypt32(
+      instancesUniFactory.carol.encrypt32(
         1985,
       ); /* This means a max-tolerated slippage of 0.75% because 0.5*4000*0.0075=15 */
 
@@ -213,7 +216,7 @@ describe("Private UniswapV2", function () {
       encryptedAmountBOutMinBob,
       bobAddress,
       currentTime + 240,
-      { gasLimit: 10000000 }, // important because here createTransaction is not enough, this is due to an issue with gas estimation when we call TFHE.decrypt :
+      { gasLimit: 5000000 }, // important because here createTransaction is not enough, this is due to an issue with gas estimation when we call TFHE.decrypt :
       // see https://discord.com/channels/901152454077452399/1143742481553432617/1151169231812034672
     );
 
@@ -227,16 +230,16 @@ describe("Private UniswapV2", function () {
       encryptedAmountBOutMinCarol,
       carolAddress,
       currentTime + 240,
-      { gasLimit: 10000000 }, // important because here createTransaction is not enough, this is due to an issue with gas estimation when we call TFHE.decrypt :
+      { gasLimit: 5000000 }, // important because here createTransaction is not enough, this is due to an issue with gas estimation when we call TFHE.decrypt :
       // see https://discord.com/channels/901152454077452399/1143742481553432617/1151169231812034672
     );
 
     let [receipt11, receipt12] = await Promise.all([tx11.wait(), tx12.wait()]);
     console.log("Bob's swap was confirmed at block no : ", receipt11?.blockNumber);
     console.log("Carol's was confirmed at block no : ", receipt12?.blockNumber);
-    // expect(receipt11?.blockNumber).to.equal(receipt12?.blockNumber);     // ! Not always true despite my best efforts, is there a way to slow down block time??
+    expect(receipt11?.blockNumber).to.equal(receipt12?.blockNumber);
     console.log(
-      " ✅ SUCESS ✅ : Bob and Alice were able to swap tokens in the same block while avoiding front-running, thanks to the fhEVM! \n ! Not always true despite my best efforts, is there a way to slow down block time??",
+      " ✅ SUCESS ✅ : Bob and Alice were able to swap tokens in the same block while avoiding front-running, thanks to the fhEVM!",
     );
     tokenBob = instancesTokenA.bob.getTokenSignature(tokenAAddress)!;
     encryptedBalBBob = await tokenA
