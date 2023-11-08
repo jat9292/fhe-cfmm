@@ -60,7 +60,6 @@ contract UniswapV2FactoryEncrypted {
     ) external ensure(deadline) returns (uint liquidity) {
         address pair =  getPair[tokenA][tokenB];
         require(pair != address(0), "Pool not created yet");
-        require(IEncryptedERC20(tokenA).decryptors(pair) && IEncryptedERC20(tokenB).decryptors(pair) , "Pool must be registered as decryptors for both tokens");
         
         IEncryptedERC20(tokenA).transferFrom(msg.sender, pair, TFHE.asEuint32(encryptedAmountA));
         IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, TFHE.asEuint32(encryptedAmountB));

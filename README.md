@@ -36,14 +36,13 @@ pnpm test
 ```
 
 In this test, first two EncryptedERC20, TokenA and TokenB, will be minted and distributed to Alice, Bob and Carol. Then
-Alice will deploy a UniswapV2-like pool for the tokenA/tokenB and add liquidity to it. The pool will be registered as a
-privilieged "Decryptor" for the two tokens by Alice (the tokens owner). Then Bob and Carol will pre-approve **both**
-tokens to the Uniswap factory (which also acts as a router in our implementation) not just one of the tokens: indeed,
-ideally each trader must already own a little bit of both tokens and approve both of the tokens to avoid someone
-guessing the direction of the swap. During each swap, both tokens are transfered in **and** out of the pool, even if,
-almost always in practise, one of the transfered _in_ amounts is null and the other transfered _out_ is also null as we
-sell one of the tokens (transfer _in_ the pool) to buy the other (transferred _out_ of the pool). We do this to
-obfuscate the direction of the trade.
+Alice will deploy a UniswapV2-like pool for the tokenA/tokenB and add liquidity to it. Then Bob and Carol will
+pre-approve **both** tokens to the Uniswap factory (which also acts as a router in our implementation) not just one of
+the tokens: indeed, ideally each trader must already own a little bit of both tokens and approve both of the tokens to
+avoid someone guessing the direction of the swap. During each swap, both tokens are transfered in **and** out of the
+pool, even if, almost always in practise, one of the transfered _in_ amounts is null and the other transfered _out_ is
+also null as we sell one of the tokens (transfer _in_ the pool) to buy the other (transferred _out_ of the pool). We do
+this to obfuscate the direction of the trade.
 
 At the end of the test, two swaps with encrypted amounts happen and are batched in a singe block, one initated by Bob
 and the other by Carol.
@@ -54,10 +53,8 @@ After all the tests runned correctly stop the fhEVM with :
 pnpm fhevm:stop
 ```
 
-# Modifications done to the original ERC20Encrypted:
+# Modification done to the original ERC20Encrypted:
 
-- added a privileged role "Decryptor" : the owner can add or remove decryptors accounts which are able to decrypt any
-  encrypted balance, by calling a new version of _balanceOf_ - note: this function is now overloaded!
 - added an overflow check on totalSupply Note : ERC20 is maybe not the best naming convention, as the token is not 100%
   adhering to the ERC20 standard (see comments in the `ERC20Encrypted` contract)
 
@@ -84,12 +81,11 @@ pnpm fhevm:stop
 - Anyways, batching once in a while several pending transactions is a much more sensible approach than the current
   implementation. Indeed, **the main problem** with the current implementation is that at the end of each block, all the
   transferred amounts sent in any mint, burn or swap transaction are decrypted to update the reserves of the pool (via
-  calls to the special _balanceOf_ function by the pair contract with the decryptor role), so confidentiality is indeed
-  lost, post-block confirmation. Another implementation (**TODO**) would batch queues of pending transactions once in a
-  while **before** updating the reserves: the pool reserves would be updated only **after** the balances of all the
-  traders in the queue would be homomorphically updated so there would be almost no loss of confidentiality. Despite
-  this issue, the current implementation is already useful in order to avoid the front-running problem that is plaguing
-  DeFi.
+  calls to the special _balanceOfMeUnprotected_ function by the pair contract), so confidentiality is indeed lost,
+  post-block confirmation. Another implementation (**TODO**) would batch queues of pending transactions once in a while
+  **before** updating the reserves: the pool reserves would be updated only **after** the balances of all the traders in
+  the queue would be homomorphically updated so there would be almost no loss of confidentiality. Despite this issue,
+  the current implementation is already useful in order to avoid the front-running problem that is plaguing DeFi.
 
 - We could add encryption also for the liquidity token balances and for the reserves: it is actually a prerequisite if
   we want to implement the batch-settlement idea that we discussed previously. We would still keep `reserve0` and

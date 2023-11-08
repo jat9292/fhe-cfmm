@@ -6,8 +6,6 @@ import "fhevm/lib/TFHE.sol";
 
 interface IEncryptedERC20 { // Not really an ERC20 : missing events, missing boolean returns on transfers and approvals, not same function signatures.
 
-    function decryptors(address account) external returns(bool);
-
     // Sets the balance of the owner to the given encrypted balance.
     function mint(bytes calldata encryptedAmount) external;
 
@@ -28,10 +26,7 @@ interface IEncryptedERC20 { // Not really an ERC20 : missing events, missing boo
         bytes calldata signature
     ) external view returns (bytes memory);
 
-    // should be accessed restricted to decryptor role
-    function balanceOf(
-        address account
-    ) external view returns (uint32);
+    function balanceOfMeUnprotected() external view returns (uint32);
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
     function approve(address spender, bytes calldata encryptedAmount) external;

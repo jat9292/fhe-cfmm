@@ -20,9 +20,6 @@ contract EncryptedERC20 is EIP712WithModifier { // Not really an ERC20 : missing
     // A mapping of the form mapping(owner => mapping(spender => allowance)).
     mapping(address => mapping(address => euint32)) internal allowances;
 
-    // privilieged actors able to decrypt any encrypted balance (useful for AMMs)
-    mapping(address => bool) public decryptors;
-
     // The owner of the contract.
     address public contractOwner;
 
@@ -67,11 +64,9 @@ contract EncryptedERC20 is EIP712WithModifier { // Not really an ERC20 : missing
         return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
     }
 
-    // access-restricted to decryptor role (useful for AMMs)
-    function balanceOf(
-        address account
-    ) public view onlyDecryptor returns (uint32) {
-        return TFHE.decrypt(balances[account]);
+    // WARNING: do NOT use unless you accept to loose confidentiality of your balance (useful for AMMs)
+    function balanceOfMeUnprotected() public view returns (uint32) {
+        return TFHE.decrypt(balances[msg.sender]);
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
@@ -131,23 +126,9 @@ contract EncryptedERC20 is EIP712WithModifier { // Not really an ERC20 : missing
         balances[to] = balances[to] + amount;
         balances[from] = balances[from] - amount;
     }
-
-    function registerDecryptor(address _decryptor) external onlyContractOwner {
-        decryptors[_decryptor] = true;
-    }
-
-    function cancelDecryptor(address _decryptor) external onlyContractOwner {
-        decryptors[_decryptor] = false;
-    }
-
+    
     modifier onlyContractOwner() {
         require(msg.sender == contractOwner);
         _;
     }
-
-    modifier onlyDecryptor() {
-        require(decryptors[msg.sender]);
-        _;
-    }
-
 }

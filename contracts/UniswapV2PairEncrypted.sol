@@ -76,8 +76,8 @@ contract UniswapV2PairEncrypted is UniswapV2ERC20 {
     // this low-level function should be called from a contract which performs important safety checks
     function mint(address to) external lock onlyRouter returns (uint liquidity) {
         (uint112 _reserve0, uint112 _reserve1) = getReserves(); // gas savings
-        uint balance0 = IEncryptedERC20(token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
-        uint balance1 = IEncryptedERC20(token1).balanceOf(address(this));
+        uint balance0 = IEncryptedERC20(token0).balanceOfMeUnprotected(); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        uint balance1 = IEncryptedERC20(token1).balanceOfMeUnprotected();
 
         uint amount0 = balance0-_reserve0;
         uint amount1 = balance1-_reserve1;
@@ -102,8 +102,8 @@ contract UniswapV2PairEncrypted is UniswapV2ERC20 {
     function burn(address to) external lock onlyRouter returns (uint amount0, uint amount1)  {
         address _token0 = token0;                                // gas savings
         address _token1 = token1;                                // gas savings
-        uint balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
-        uint balance1 = IEncryptedERC20(_token1).balanceOf(address(this));
+        uint balance0 = IEncryptedERC20(_token0).balanceOfMeUnprotected(); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        uint balance1 = IEncryptedERC20(_token1).balanceOfMeUnprotected();
         uint liquidity = balanceOf[address(this)];
 
         uint _totalSupply = totalSupply; 
@@ -117,8 +117,8 @@ contract UniswapV2PairEncrypted is UniswapV2ERC20 {
         IEncryptedERC20(_token0).transfer(to, amount0Enc);
         IEncryptedERC20(_token1).transfer(to, amount1Enc);
 
-        balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); 
-        balance1 = IEncryptedERC20(_token1).balanceOf(address(this)); 
+        balance0 = IEncryptedERC20(_token0).balanceOfMeUnprotected(); 
+        balance1 = IEncryptedERC20(_token1).balanceOfMeUnprotected(); 
                                                                       
         _update(balance0, balance1);
 
@@ -140,8 +140,8 @@ contract UniswapV2PairEncrypted is UniswapV2ERC20 {
         require(to != _token0 && to != _token1, "UniswapV2: INVALID_TO");
         IEncryptedERC20(_token0).transfer(to, amount0OutEnc); // even if amount is null, do a transfer to obfuscate trade direction
         IEncryptedERC20(_token1).transfer(to, amount1OutEnc); // even if amount is null, do a transfer to obfuscate trade direction
-        balance0 = IEncryptedERC20(_token0).balanceOf(address(this)); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
-        balance1 = IEncryptedERC20(_token1).balanceOf(address(this));
+        balance0 = IEncryptedERC20(_token0).balanceOfMeUnprotected(); // of course this is leaking confidentiality of the transferred amount, see comment at the top of contract for a better approach
+        balance1 = IEncryptedERC20(_token1).balanceOfMeUnprotected();
         }
 
         uint amount0In = balance0 > _reserve0 - amount0Out ? balance0 - (_reserve0 - amount0Out) : 0;

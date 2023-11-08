@@ -91,22 +91,14 @@ describe("Private UniswapV2", function () {
     const pairAddress = await uniswapFactory.getPair(tokenAAddress, tokenBAddress);
     console.log("UNISWAP PAIR ADDRESS : ", pairAddress);
 
-    // ALICE (owner of both tokens) registers the Uniswap pool as a decryptor for both tokens
-    await tokenA.registerDecryptor(pairAddress);
-    const tx6 = await tokenB.registerDecryptor(pairAddress);
-    await tx6.wait();
-
-    console.log("Pair is decryptor of token A", await tokenA.decryptors(pairAddress));
-    console.log("Pair is decryptor of token B", await tokenB.decryptors(pairAddress));
-
     // ALICE add the first amount of liquidity in the pool
     const instancesUniFactory = await createInstances(uniswapFactoryAddress, ethers, signers);
     let encryptedTransferAmountA = instancesUniFactory.alice.encrypt32(20_000_000);
     let encryptedTransferAmountB = instancesUniFactory.alice.encrypt32(10_000_000);
     let encryptedMinLiquidity = instancesUniFactory.alice.encrypt32(1500000 - 100); // we remove 100 = MINIMUM_LIQUIDITY during liquidity initialization
     const currentTime = (await ethers.provider.getBlock("latest"))?.timestamp ?? 0;
-    const tx7 = await createTransaction(
-      uniswapFactory["addLiquidity(address,address,bytes,bytes,bytes,address,uint256)"],
+
+    const tx7 = await uniswapFactory.addLiquidity(
       tokenAAddress,
       tokenBAddress,
       encryptedTransferAmountA,
@@ -114,6 +106,8 @@ describe("Private UniswapV2", function () {
       encryptedMinLiquidity,
       aliceAddress,
       currentTime + 120,
+      { gasLimit: 5000000 }, // important because here createTransaction is not enough, this is due to an issue with gas estimation when we call TFHE.decrypt :
+      // see https://discord.com/channels/901152454077452399/1143742481553432617/1151169231812034672
     );
     await tx7.wait();
 
