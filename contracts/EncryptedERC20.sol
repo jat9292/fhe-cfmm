@@ -64,9 +64,10 @@ contract EncryptedERC20 is EIP712WithModifier { // Not really an ERC20 : missing
         return TFHE.reencrypt(balances[msg.sender], publicKey, 0);
     }
 
-    // WARNING: do NOT use unless you accept to loose confidentiality of your balance (useful for AMMs)
-    function balanceOfMeUnprotected() public view returns (uint32) {
-        return TFHE.decrypt(balances[msg.sender]);
+    // WARNING: do NOT use the returned value from this function in an untrusted smart contract, otherwise you risk to loose confidentiality of your balance
+    // this function is useful for AMMs
+    function balanceOfMeUnprotected() public returns (euint32) {
+        return balances[msg.sender];
     }
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
