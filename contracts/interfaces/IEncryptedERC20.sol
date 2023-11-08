@@ -26,7 +26,7 @@ interface IEncryptedERC20 { // Not really an ERC20 : missing events, missing boo
         bytes calldata signature
     ) external view returns (bytes memory);
 
-    function balanceOfMeUnprotected() external view returns (uint32);
+    function balanceOfMeUnprotected() external returns (euint32);
 
     // Sets the `encryptedAmount` as the allowance of `spender` over the caller's tokens.
     function approve(address spender, bytes calldata encryptedAmount) external;
