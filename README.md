@@ -1,13 +1,15 @@
-# Sample Hardhat Project
+# How to run tests
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.
-
-Try running some of the following tasks:
+First build and run the custom fhevm node with a block gas limit of 100M :
 
 ```shell
-npx hardhat help
+docker cp fhevm:/config/setup.sh .
+docker run -i -v $PWD/setup.sh:/config/setup.sh -p 8545:8545 --rm --name fhevm ghcr.io/zama-ai/evmos-dev-node:v0.1.10
+```
+
+Then use the faucet (after setting a .env, see .env.example) and run the hardhat test :
+
+```shell
+pnpm fhevm:faucet
 npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat run scripts/deploy.ts
 ```
