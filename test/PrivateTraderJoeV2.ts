@@ -1,10 +1,9 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { createTransaction, waitForBlock } from "./utils";
+
 import { createInstances } from "./instance";
 import { getSigners } from "./signers";
-
-
+import { createTransaction, waitForBlock } from "./utils";
 
 describe("Confidential TraderJoeV2", function () {
   before(async function () {
@@ -22,14 +21,14 @@ describe("Confidential TraderJoeV2", function () {
     await tokenA.waitForDeployment();
     let tokenAAddress = await tokenA.getAddress();
 
-
     let tokenB = await tokenFactory.deploy("EncTokenB", "ETB");
     await tokenB.waitForDeployment();
     let tokenBAddress = await tokenB.getAddress();
 
     let temp;
     let temp2;
-    if (tokenAAddress > tokenBAddress) { // impose correct order : tokenA=token0 and tokenB=token1 for more readable test
+    if (tokenAAddress > tokenBAddress) {
+      // impose correct order : tokenA=token0 and tokenB=token1 for more readable test
       temp = tokenAAddress;
       tokenAAddress = tokenBAddress;
       tokenBAddress = temp;
@@ -38,10 +37,8 @@ describe("Confidential TraderJoeV2", function () {
       tokenB = temp2;
     }
 
-    
     console.log("EncryptedERC20 TOKENA ADDRESS  :  ", tokenAAddress);
     console.log("EncryptedERC20 TOKENB ADDRESS  :  ", tokenBAddress);
-
 
     const instancesTokenA = await createInstances(tokenAAddress, ethers, signers);
     const instancesTokenB = await createInstances(tokenBAddress, ethers, signers);
@@ -57,12 +54,11 @@ describe("Confidential TraderJoeV2", function () {
     console.log("Alice succesfully minted 2147483647 EncryptedtokenA and 2147483647 EncryptedtokenB");
 
     // ALICE deploys the Uniswap Factory
-    const uniswapFactoryFactory = await ethers.getContractFactory("ZNEWUniswapV2FactoryEncrypted");
+    const uniswapFactoryFactory = await ethers.getContractFactory("TraderJoeV2FactoryEncrypted");
     const uniswapFactory = await uniswapFactoryFactory.connect(signers.alice).deploy();
     await uniswapFactory.waitForDeployment();
     const uniswapFactoryAddress = await uniswapFactory.getAddress();
     console.log("UNISWAP FACTORY ADDRESS  :  ", uniswapFactoryAddress);
-
 
     encryptedAmount = instancesTokenA.alice.encrypt32(1000000000);
     await tokenA.approve(uniswapFactoryAddress, encryptedAmount);
@@ -70,14 +66,22 @@ describe("Confidential TraderJoeV2", function () {
     const tx4 = await tokenB.approve(uniswapFactoryAddress, encryptedAmount);
     await tx4.wait();
 
-    console.log("TX4")
+    console.log("TX4");
 
     // ALICE creates the tokenA/tokenB Uniswap pool
     const instancesUniswapFactory = await createInstances(uniswapFactoryAddress, ethers, signers);
     let encryptedAmountA = instancesUniswapFactory.alice.encrypt32(100001);
     let encryptedAmountB = instancesUniswapFactory.alice.encrypt32(100001);
 
-    const tx5 = await uniswapFactory.createPair(aliceAddress, tokenAAddress, tokenBAddress, encryptedAmountA, encryptedAmountB, 1000000, 10);
+    const tx5 = await uniswapFactory.createPair(
+      aliceAddress,
+      tokenAAddress,
+      tokenBAddress,
+      encryptedAmountA,
+      encryptedAmountB,
+      1000000,
+      10,
+    );
     await tx5.wait();
     const pairAddress = await uniswapFactory.getPair(tokenAAddress, tokenBAddress);
     console.log("UNISWAP PAIR ADDRESS : ", pairAddress);
@@ -99,10 +103,10 @@ describe("Confidential TraderJoeV2", function () {
       encryptedAmountA,
       encryptedAmountB,
       Array(11).fill(10000000),
-      [0,1,2,3,4,5,6,7,8,9,10],//11,12,13,14,15,16,17,18,19,20],
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], //11,12,13,14,15,16,17,18,19,20],
       aliceAddress,
       currentTime + 120,
-      {gasLimit:10000000}
+      { gasLimit: 10000000 },
     );
     await tx6.wait(1);
 
@@ -112,19 +116,17 @@ describe("Confidential TraderJoeV2", function () {
       encryptedAmountA,
       encryptedAmountB,
       Array(10).fill(10000000),
-      [11,12,13,14,15,16,17,18,19,20],
+      [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
       aliceAddress,
       currentTime + 180,
-      {gasLimit:10000000}
+      { gasLimit: 10000000 },
     );
     await tx6bis.wait(1);
 
-
-
     const pair = await ethers.getContractAt("ZNEWUniswapV2PairEncrypted", pairAddress);
-    let balLP = []; 
-    for (let i=0;i<21;i++){
-      balLP.push(await pair.totalSupply(i)); 
+    let balLP = [];
+    for (let i = 0; i < 21; i++) {
+      balLP.push(await pair.totalSupply(i));
     }
     console.log(balLP);
 
@@ -133,12 +135,10 @@ describe("Confidential TraderJoeV2", function () {
 
     encryptedAmountA = instancesUniswapFactory.alice.encrypt32(100000000);
     encryptedAmountB = instancesUniswapFactory.alice.encrypt32(100000000);
-    const tx7 = await tokenA.approve(uniswapFactoryAddress,encryptedAmountA);
-    const tx8 = await tokenB.approve(uniswapFactoryAddress,encryptedAmountB);
+    const tx7 = await tokenA.approve(uniswapFactoryAddress, encryptedAmountA);
+    const tx8 = await tokenB.approve(uniswapFactoryAddress, encryptedAmountB);
     await tx8.wait();
     console.log("TX8");
-
-
 
     encryptedBalAAlice = await tokenA["balanceOf(bytes32,bytes)"](tokenAAlice.publicKey, tokenAAlice.signature);
     let balanceAAliceBeforeSwap = instancesTokenA.alice.decrypt(tokenAAddress, encryptedBalAAlice);
@@ -148,54 +148,49 @@ describe("Confidential TraderJoeV2", function () {
 
     console.log("balance EncryptedtokenA Alice ", balanceAAlice);
 
-
     encryptedAmountA = instancesTokenA.alice.encrypt32(1000);
     encryptedAmountB = instancesTokenB.alice.encrypt32(0);
     const tx9 = await uniswapFactory.swap(
       tokenAAddress,
       tokenBAddress,
-      encryptedAmountA,//4603000n,
+      encryptedAmountA, //4603000n,
       encryptedAmountB,
       aliceAddress,
       currentTime + 5000,
-      {gasLimit:100_000_000}
+      { gasLimit: 100_000_000 },
     );
     const tx9receipt = await tx9.wait(1);
     console.log("TX9");
     console.log("Gas consumed by small swap tx : ", tx9receipt?.gasUsed);
 
-    balLP = []; 
-    for (let i=0;i<21;i++){
-      balLP.push(await pair.totalSupply(i)); 
+    balLP = [];
+    for (let i = 0; i < 21; i++) {
+      balLP.push(await pair.totalSupply(i));
     }
     console.log(balLP);
-
-
 
     activeBin = await pair.activeBin();
     console.log(activeBin);
     let activeBinIndex = await pair.activeBinIndex();
     console.log(activeBinIndex);
 
-    
     encryptedBalAAlice = await tokenA["balanceOf(bytes32,bytes)"](tokenAAlice.publicKey, tokenAAlice.signature);
     let balanceAAliceAfterSwap = instancesTokenA.alice.decrypt(tokenAAddress, encryptedBalAAlice);
     encryptedBalBAlice = await tokenB["balanceOf(bytes32,bytes)"](tokenBAlice.publicKey, tokenBAlice.signature);
     let balanceBAliceAfterSwap = instancesTokenB.alice.decrypt(tokenBAddress, encryptedBalBAlice);
-    console.log("Amount Sold A: ", balanceAAliceBeforeSwap-balanceAAliceAfterSwap);
-    console.log("Amount Bought B: ", balanceBAliceAfterSwap-balanceBAliceBeforeSwap);
-
+    console.log("Amount Sold A: ", balanceAAliceBeforeSwap - balanceAAliceAfterSwap);
+    console.log("Amount Bought B: ", balanceBAliceAfterSwap - balanceBAliceBeforeSwap);
 
     encryptedAmountA = instancesTokenA.alice.encrypt32(0);
     encryptedAmountB = instancesTokenB.alice.encrypt32(400000);
-    const tx10= await uniswapFactory.swap(
+    const tx10 = await uniswapFactory.swap(
       tokenAAddress,
       tokenBAddress,
       encryptedAmountA,
       encryptedAmountB,
       aliceAddress,
       currentTime + 5000,
-      {gasLimit:100_000_000}
+      { gasLimit: 100_000_000 },
     );
     const tx10receipt = await tx10.wait(1);
     console.log("TX10");
@@ -205,17 +200,12 @@ describe("Confidential TraderJoeV2", function () {
     let balanceAAliceAfterSwap2 = instancesTokenA.alice.decrypt(tokenAAddress, encryptedBalAAlice);
     encryptedBalBAlice = await tokenB["balanceOf(bytes32,bytes)"](tokenBAlice.publicKey, tokenBAlice.signature);
     let balanceBAliceAfterSwap2 = instancesTokenB.alice.decrypt(tokenBAddress, encryptedBalBAlice);
-    console.log("Amount Bought A: ", balanceAAliceAfterSwap2-balanceAAliceAfterSwap);
-    console.log("Amount Sold B: ", balanceBAliceAfterSwap-balanceBAliceAfterSwap2);
+    console.log("Amount Bought A: ", balanceAAliceAfterSwap2 - balanceAAliceAfterSwap);
+    console.log("Amount Sold B: ", balanceBAliceAfterSwap - balanceBAliceAfterSwap2);
 
     activeBin = await pair.activeBin();
     console.log(activeBin);
     activeBinIndex = await pair.activeBinIndex();
     console.log(activeBinIndex);
-
-
   });
-
-
 });
-

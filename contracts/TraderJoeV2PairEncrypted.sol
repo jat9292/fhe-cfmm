@@ -17,7 +17,7 @@ this issue, the current implementation is already useful in order to avoid the f
 plaguing DeFi.
 */
 
-contract ZNEWUniswapV2PairEncrypted is LBToken {
+contract TraderJoeV2PairEncrypted is LBToken {
 
     uint32 public constant MINIMUM_LIQUIDITY = 10000; // to avoid inflation attack https://mixbytes.io/blog/overview-of-the-inflation-attack#:~:text=An%20inflation%20attack%20is%20a,significant%20losses%20for%20unsuspecting%20investors.
     bool initialized = false; // swaps should not start before the first deposit of liquidity, also helps to avoid the inflation attack by front-running first deposit

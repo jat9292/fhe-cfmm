@@ -2,7 +2,7 @@ pragma solidity 0.8.19;
 import "fhevm/lib/TFHE.sol";
 
 
-interface IZNEWUniswapV2PairEncrypted {
+interface ITraderJoeV2PairEncrypted {
 
 
     // called once by the factory at time of deployment
