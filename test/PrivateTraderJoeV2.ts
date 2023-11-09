@@ -170,9 +170,9 @@ describe("Confidential TraderJoeV2", function () {
     console.log(balLP);
 
     activeBin = await pair.activeBin();
-    console.log(activeBin);
+
     let activeBinIndex = await pair.activeBinIndex();
-    console.log(activeBinIndex);
+    console.log("Active Bin index : ", activeBinIndex);
 
     encryptedBalAAlice = await tokenA["balanceOf(bytes32,bytes)"](tokenAAlice.publicKey, tokenAAlice.signature);
     let balanceAAliceAfterSwap = instancesTokenA.alice.decrypt(tokenAAddress, encryptedBalAAlice);
@@ -204,8 +204,8 @@ describe("Confidential TraderJoeV2", function () {
     console.log("Amount Sold B: ", balanceBAliceAfterSwap - balanceBAliceAfterSwap2);
 
     activeBin = await pair.activeBin();
-    console.log(activeBin);
+
     activeBinIndex = await pair.activeBinIndex();
-    console.log(activeBinIndex);
+    console.log("Active Bin index : ", activeBinIndex);
   });
 });
