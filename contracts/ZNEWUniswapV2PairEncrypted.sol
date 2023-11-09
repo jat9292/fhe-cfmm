@@ -1,7 +1,8 @@
 pragma solidity 0.8.19;
 
 
-import "./interfaces/IZNEWEncryptedERC20.sol";
+import "./interfaces/IEncryptedERC20.sol";
+import "fhevm/lib/TFHE.sol";
 
 import "./LBToken.sol";
 
@@ -24,14 +25,14 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
     address public token0; // we suppose token0 and token1 are addresses of EncryptedERC20 contracts
     address public token1;
 
-    uint32 private reserve0;           // uses single storage slot, accessible via getReserves
-    uint32 private reserve1;           // uses single storage slot, accessible via getReserves
+    euint32 private reserve0;           // uses single storage slot, accessible via getReserves
+    euint32 private reserve1;           // uses single storage slot, accessible via getReserves
     uint8 public activeBinIndex;
     bool _firstMint = true;
 
     struct ActiveBin {
-        uint32 amount0;
-        uint32 amount1;
+        euint32 amount0;
+        euint32 amount1;
     }
 
     ActiveBin public activeBin;
@@ -54,7 +55,7 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
         z = x < y ? x : y;
     }
 
-    function getReserves() public view returns (uint32 _reserve0, uint32 _reserve1) {
+    function getReserves() public view returns (euint32 _reserve0, euint32 _reserve1) {
         _reserve0 = reserve0;
         _reserve1 = reserve1;
     }
@@ -81,7 +82,7 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
     }
 
     // update reserves and, on the first call per block, price accumulators
-    function _update(uint32 balance0, uint32 balance1) private {
+    function _update(euint32 balance0, euint32 balance1) private {
         reserve0 = balance0;
         reserve1 = balance1;
     }
@@ -93,12 +94,12 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
     // this low-level function should be called from a contract which performs important safety checks
     function mint(address to, uint32[] memory liquidities, uint8[] memory indexLiquidities ) public lock onlyRouter {
         require(indexLiquidities.length==liquidities.length, "Length mismatch between the indexLiquidities and the liquidities arrays");
-        (uint32 _reserve0, uint32 _reserve1) = getReserves();
-        uint32 amount0;
-        uint32 amount1;
+        (euint32 _reserve0, euint32 _reserve1) = getReserves();
+        euint32 amount0;
+        euint32 amount1;
         {
-        uint32 balance0 = IZNEWEncryptedERC20(token0).balanceOfMeUnprotected();
-        uint32 balance1 = IZNEWEncryptedERC20(token1).balanceOfMeUnprotected();
+        euint32 balance0 = IEncryptedERC20(token0).balanceOfMeUnprotected();
+        euint32 balance1 = IEncryptedERC20(token1).balanceOfMeUnprotected();
 
         amount0 = balance0-_reserve0;
         amount1 = balance1-_reserve1;
@@ -109,14 +110,14 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
             require(index<21,"Index must be between 0 and 20 incusive - index 10 is parity price"); // binPrice(10)=100 , i.e Price(Token0) = Price(Token1)
 
             if (index<activeBinIndex){
-                require(amount1>=liquidities[indexLiq]/1e2 + 1, "Not enough token1 sent");
-                amount1 -=liquidities[indexLiq]/1e2 + 1; // precision of 2 digits : BinToPrice*Tok0 + 100*Tok1 = Liquidity  (in each bin)
+                require(TFHE.decrypt(TFHE.gt(amount1,liquidities[indexLiq]/1e2)), "Not enough token1 sent");
+                amount1 = amount1 - TFHE.asEuint32(liquidities[indexLiq]/1e2 + 1); // precision of 2 digits : BinToPrice*Tok0 + 100*Tok1 = Liquidity  (in each bin)
                 _mint(to,index,  liquidities[indexLiq]);  
             }
 
             if (index>activeBinIndex){
-                require(amount0>=liquidities[indexLiq]/binToPrice(index) + 1, "Not enough token0 sent");
-                amount0 -=liquidities[indexLiq]/binToPrice(index) + 1;
+                require(TFHE.decrypt(TFHE.gt(amount0,liquidities[indexLiq]/binToPrice(index))), "Not enough token0 sent");
+                amount0 = amount0 - TFHE.asEuint32(liquidities[indexLiq]/binToPrice(index) + 1);
                 _mint(to,index, liquidities[indexLiq]); 
             } 
 
@@ -124,10 +125,10 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
             {
                 require(initialized || liquidities[indexLiq]>=MINIMUM_LIQUIDITY, "Not enough liquidity provided");
 
-                uint32 amount0Used = (liquidities[indexLiq]/2)/binToPrice(index) + 1;  // put equivalent quantities of both tokens in the active bin
-                uint32 amount1Used = (liquidities[indexLiq]/2)/1e2 + 1;
-                amount0 -= amount0Used;
-                amount1 -= amount1Used;
+                euint32 amount0Used = TFHE.asEuint32((liquidities[indexLiq]/2)/binToPrice(index) + 1);  // put equivalent quantities of both tokens in the active bin
+                euint32 amount1Used =  TFHE.asEuint32((liquidities[indexLiq]/2)/1e2 + 1);
+                amount0 = amount0 - amount0Used;
+                amount1 = amount1 - amount1Used;
                 if(initialized){
                     _mint(to,index, liquidities[indexLiq]);
                 } else {
@@ -135,72 +136,77 @@ contract ZNEWUniswapV2PairEncrypted is LBToken {
                     _mint(address(0),index, MINIMUM_LIQUIDITY);
                     initialized = true; // for initialization
                 }
-                activeBin.amount0 += amount0Used;
-                activeBin.amount1 += amount1Used;
+                activeBin.amount0 = activeBin.amount0 + amount0Used;
+                activeBin.amount1 = activeBin.amount1 + amount1Used;
             }
         }
 
         // reimburse excess
-        IZNEWEncryptedERC20(token0).transfer(to,amount0);
-        IZNEWEncryptedERC20(token1).transfer(to,amount1);
+        IEncryptedERC20(token0).transfer(to,amount0);
+        IEncryptedERC20(token1).transfer(to,amount1);
         {
-        uint32 balance0 = IZNEWEncryptedERC20(token0).balanceOfMeUnprotected();
-        uint32 balance1 = IZNEWEncryptedERC20(token1).balanceOfMeUnprotected();
+        euint32 balance0 = IEncryptedERC20(token0).balanceOfMeUnprotected();
+        euint32 balance1 = IEncryptedERC20(token1).balanceOfMeUnprotected();
         _update(balance0, balance1);
         }
 
         emit Mint(msg.sender, to);
     }
 
-        // this low-level function should be called from a contract which performs important safety checks
-    function swap(address to, uint32 amount0, uint32 amount1 ) external lock onlyRouter {
-        require((amount0==0 && amount1!=0) || (amount0!=0 && amount1==0), "Exactly one of the inputed amounts must be null");
-        bool tok0ForTok1 = (amount0!=0);
-        uint32 accumulatedDelta0 = 0;
-        uint32 accumulatedDelta1 = 0;
+    // this low-level function should be called from a contract which performs important safety checks
+    function swap(address to, euint32 amount0, euint32 amount1 ) external lock onlyRouter {
+        ebool amount0IsZero = TFHE.eq(amount0,0);
+        ebool amount1IsZero = TFHE.eq(amount1,0);
+        //// require(TFHE.decrypt(TFHE.xor(amount0IsZero,amount1IsZero)), "Exactly one of the inputed amounts must be null"); // FHEVM bug? TFHE.xor and TFHE.not are not working
+        bool amount0IsZeroBool = TFHE.decrypt(amount0IsZero);
+        bool amount1IsZeroBool =  TFHE.decrypt(amount1IsZero);
+        require((amount0IsZeroBool&&!amount1IsZeroBool) || (!amount0IsZeroBool&&amount1IsZeroBool), "Exactly one of the inputed amounts must be null");
+        euint32 zeroEncrypted = TFHE.asEuint32(0);
 
-        if (tok0ForTok1){  // replace with CMUX in encrypted version
-            while (true) {
-                uint32 delta1 = binToPrice(activeBinIndex)*amount0/100; // check for overflow in encrypted version
-                if (delta1<=activeBin.amount1){ // stay in last bin
-                    accumulatedDelta1+=delta1;
-                    activeBin.amount1-=delta1;
-                    activeBin.amount0+=amount0;
-                    amount0 = 0;
-                    IZNEWEncryptedERC20(token1).transfer(to,accumulatedDelta1);
+        if (TFHE.decrypt(amount1IsZero)){  // sell token 0 For Token1 , TODO : replace with CMUX and do a null transfer for the other token
+            euint32 accumulatedDelta1 = zeroEncrypted+zeroEncrypted;
+            
+            while (true){ // alternatively use : //for(uint i=0; i<20; i++) { // max 20 bin jumps with our configuration , or some lower limit if you want to avoid hughe slippage
+                euint32 delta1 = TFHE.div(TFHE.mul(amount0,binToPrice(activeBinIndex)),100); // TODO : check for overflow
+                
+                if (TFHE.decrypt(TFHE.le(delta1,activeBin.amount1))){ // stay in last bin
+                    accumulatedDelta1=accumulatedDelta1+delta1;
+                    activeBin.amount1=activeBin.amount1-delta1;
+                    activeBin.amount0=activeBin.amount0+amount0;
+                    
+                    IEncryptedERC20(token1).transfer(to,accumulatedDelta1);
                     break;
                 }
                 else { // shift to next bin, in trader joe v2 this is done efficiently for a big number of bins using a tree traversal
-                    uint32 delta0 = (totalSupply(activeBinIndex)/binToPrice(activeBinIndex)-activeBin.amount0);
-                    accumulatedDelta1+=delta0*binToPrice(activeBinIndex)/100;
-                    amount0-= delta0;
+                    euint32 delta0 = TFHE.asEuint32(totalSupply(activeBinIndex)/binToPrice(activeBinIndex))-activeBin.amount0;
+                    accumulatedDelta1=accumulatedDelta1+TFHE.div(TFHE.mul(delta0,binToPrice(activeBinIndex)),100);
+                    amount0= amount0-delta0;
                     require(activeBinIndex>=0, "Swap rejected, insufficient liquidity");
                     activeBinIndex -= 1;
-                    activeBin.amount1=totalSupply(activeBinIndex)/100;
-                    activeBin.amount0=0;
+                    activeBin.amount1=TFHE.asEuint32(totalSupply(activeBinIndex)/100);
+                    activeBin.amount0=zeroEncrypted;
                 }
             }
         } else { // case we exchange token1 for token0
+            euint32 accumulatedDelta0 = zeroEncrypted;
             while (true) {
-                uint32 delta0 = 100*amount1/binToPrice(activeBinIndex); // check for overflow in encrypted version
-                if (delta0<=activeBin.amount0){ // stay in last bin
-                    accumulatedDelta0+=delta0;
-                    activeBin.amount0-=delta0;
-                    activeBin.amount1+=amount1;
-                    amount1 = 0;
-                    IZNEWEncryptedERC20(token0).transfer(to,accumulatedDelta0);
+
+                euint32 delta0 = TFHE.div(TFHE.mul(amount1,100),binToPrice(activeBinIndex)); // TODO : check for overflow
+                if (TFHE.decrypt(TFHE.le(delta0,activeBin.amount0))){ // stay in last bin 
+                    accumulatedDelta0=accumulatedDelta0+delta0;
+                    activeBin.amount0=activeBin.amount0-delta0;
+                    activeBin.amount1=activeBin.amount1+amount1;
+                    IEncryptedERC20(token0).transfer(to,accumulatedDelta0);
                     break;
                 }
                 else { // shift to next bin, in trader joe v2 this is done efficiently for a big number of bins using a tree traversal
-                    uint32 delta1 = (totalSupply(activeBinIndex)/100-activeBin.amount1);
-                    accumulatedDelta0+=delta1*100/binToPrice(activeBinIndex);
-                    amount1-= delta1;
-
-
+                    euint32 delta1 = (TFHE.asEuint32(totalSupply(activeBinIndex)/100)-activeBin.amount1); 
+                    accumulatedDelta0=accumulatedDelta0+TFHE.div(TFHE.mul(delta1,100),binToPrice(activeBinIndex));
+                    amount1= amount1-delta1;
                     activeBinIndex += 1;
                     require(activeBinIndex<21, "Swap rejected, insufficient liquidity");
-                    activeBin.amount0=totalSupply(activeBinIndex)/binToPrice(activeBinIndex);
-                    activeBin.amount1=0;
+                    activeBin.amount0=TFHE.asEuint32(totalSupply(activeBinIndex)/binToPrice(activeBinIndex));
+                    activeBin.amount1=zeroEncrypted;
                 }
             }
         }

@@ -2,7 +2,8 @@ pragma solidity 0.8.19;
 
 import "./ZNEWUniswapV2PairEncrypted.sol";
 import "./interfaces/IZNEWUniswapV2PairEncrypted.sol";
-import "./interfaces/IZNEWEncryptedERC20.sol";
+import "./interfaces/IEncryptedERC20.sol";
+import "fhevm/lib/TFHE.sol";
 
 
 /*
@@ -24,7 +25,7 @@ contract ZNEWUniswapV2FactoryEncrypted {
         return allPairs.length;
     }
 
-    function createPair(address to, address tokenA, address tokenB, uint32 amountA, uint32 amountB, uint32 initialLiquidity, uint8 initialActiveBin) external returns (address pair) {
+    function createPair(address to, address tokenA, address tokenB, bytes calldata amountA, bytes calldata amountB, uint32 initialLiquidity, uint8 initialActiveBin) external returns (address pair) {
         require(tokenA != tokenB, "UniswapV2: IDENTICAL_ADDRESSES");
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0), "UniswapV2: ZERO_ADDRESS");
@@ -34,8 +35,8 @@ contract ZNEWUniswapV2FactoryEncrypted {
         assembly {
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
-        IZNEWEncryptedERC20(tokenA).transferFrom(msg.sender, pair, amountA);
-        IZNEWEncryptedERC20(tokenB).transferFrom(msg.sender, pair, amountB);
+        IEncryptedERC20(tokenA).transferFrom(msg.sender, pair, TFHE.asEuint32(amountA));
+        IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, TFHE.asEuint32(amountB));
         ZNEWUniswapV2PairEncrypted(pair).initialize(to, token0, token1, initialLiquidity, initialActiveBin);
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair; // populate mapping in the reverse direction
@@ -54,8 +55,8 @@ contract ZNEWUniswapV2FactoryEncrypted {
     function addLiquidity(
         address tokenA,
         address tokenB,
-        uint32 amountAIn,
-        uint32 amountBIn,
+        bytes calldata amountAIn,
+        bytes calldata amountBIn,
         uint32[] calldata liquidities,
         uint8[] calldata indexLiquidities,
         address to,
@@ -64,29 +65,32 @@ contract ZNEWUniswapV2FactoryEncrypted {
         address pair =  getPair[tokenA][tokenB];
         require(pair != address(0), "Pool not created yet");
         
-        IZNEWEncryptedERC20(tokenA).transferFrom(msg.sender, pair, amountAIn);
-        IZNEWEncryptedERC20(tokenB).transferFrom(msg.sender, pair, amountBIn);
+        IEncryptedERC20(tokenA).transferFrom(msg.sender, pair, TFHE.asEuint32(amountAIn));
+        IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, TFHE.asEuint32(amountBIn));
         IZNEWUniswapV2PairEncrypted(pair).mint(to, liquidities, indexLiquidities);
     }
 
     /// TODO : add removeLiquidity
 
-        // **** SWAP ****
+       // **** SWAP ****
     function swap(
         address tokenA,
         address tokenB,
-        uint32 amountAIn,
-        uint32 amountBIn,
+        bytes calldata amountAIn,
+        bytes calldata amountBIn,
         address to,
         uint deadline
     ) external ensure(deadline) {
         address pair =  getPair[tokenA][tokenB];
         require(pair != address(0), "Pool not created yet");
-        
-        IZNEWEncryptedERC20(tokenA).transferFrom(msg.sender, pair, amountAIn);
-        IZNEWEncryptedERC20(tokenB).transferFrom(msg.sender, pair, amountBIn);
-        (uint32 amount0In, uint32 amount1In) = tokenA < tokenB ? (amountAIn, amountBIn) : (amountBIn, amountAIn);
-        IZNEWUniswapV2PairEncrypted(pair).swap(to, amount0In, amount1In);
-    }
+
+        euint32 eamountAIn = TFHE.asEuint32(amountAIn);
+        euint32 eamountBIn = TFHE.asEuint32(amountBIn);
+
+        IEncryptedERC20(tokenA).transferFrom(msg.sender, pair, eamountAIn);
+        IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, eamountBIn);
+        (euint32 eamount0In, euint32 eamount1In) = tokenA < tokenB ? (eamountAIn, eamountBIn) : (eamountBIn, eamountAIn);
+        IZNEWUniswapV2PairEncrypted(pair).swap(to, eamount0In, eamount1In);
+    } 
 
 }
