@@ -162,12 +162,20 @@ contract TraderJoeV2PairEncrypted is LBToken {
         bool amount1IsZeroBool =  TFHE.decrypt(amount1IsZero);
         require((amount0IsZeroBool&&!amount1IsZeroBool) || (!amount0IsZeroBool&&amount1IsZeroBool), "Exactly one of the inputed amounts must be null");
         euint32 zeroEncrypted = TFHE.asEuint32(0);
+        uint32 maxUint32 = 4294967295;
 
         if (TFHE.decrypt(amount1IsZero)){  // sell token 0 For Token1 , TODO : replace with CMUX and do a null transfer for the other token
-            euint32 accumulatedDelta1 = zeroEncrypted+zeroEncrypted;
+            euint32 accumulatedDelta1 = zeroEncrypted;
             
-            while (true){ // alternatively use : //for(uint i=0; i<20; i++) { // max 20 bin jumps with our configuration , or some lower limit if you want to avoid hughe slippage
-                euint32 delta1 = TFHE.div(TFHE.mul(amount0,binToPrice(activeBinIndex)),100); // TODO : check for overflow
+            for(uint i=0; i<20; i++) { // max 20 bin jumps with our configuration , or some lower limit if you want to avoid hughe slippage
+                
+                euint32 multiplication = TFHE.mul(amount0,binToPrice(activeBinIndex));
+                if (i==0){ // we need to check the overflow only in the first step, because both amount0 and binToPrice are maximal in the start of the swap
+                    // We could also have avoided this overflow check if we added a check on a wisely chosen max value for amount0
+                    require(TFHE.decrypt(TFHE.lt(multiplication,maxUint32/binToPrice(activeBinIndex))),"Multiplication overflow"); // Overflow check
+                }
+                
+                euint32 delta1 = TFHE.div(multiplication,100);
                 
                 if (TFHE.decrypt(TFHE.le(delta1,activeBin.amount1))){ // stay in last bin
                     accumulatedDelta1=accumulatedDelta1+delta1;
@@ -189,9 +197,15 @@ contract TraderJoeV2PairEncrypted is LBToken {
             }
         } else { // case we exchange token1 for token0
             euint32 accumulatedDelta0 = zeroEncrypted;
-            while (true) {
+            for(uint i=0; i<20; i++) { 
+                euint32 multiplication = TFHE.mul(amount1,100);
+                if (i==0){ // we need to check the overflow only in the first step, because amount1 is maximal in the start of the swap
+                    // We could also have avoided this overflow check if we added a check on a wisely chosen max value for amount1
+                    require(TFHE.decrypt(TFHE.lt(multiplication,maxUint32/100)),"Multiplication overflow"); // Overflow check
+                }
 
-                euint32 delta0 = TFHE.div(TFHE.mul(amount1,100),binToPrice(activeBinIndex)); // TODO : check for overflow
+                euint32 delta0 = TFHE.div(multiplication,binToPrice(activeBinIndex)); 
+
                 if (TFHE.decrypt(TFHE.le(delta0,activeBin.amount0))){ // stay in last bin 
                     accumulatedDelta0=accumulatedDelta0+delta0;
                     activeBin.amount0=activeBin.amount0-delta0;
@@ -211,6 +225,9 @@ contract TraderJoeV2PairEncrypted is LBToken {
             }
         }
 
+        euint32 balance0 = IEncryptedERC20(token0).balanceOfMeUnprotected();
+        euint32 balance1 = IEncryptedERC20(token1).balanceOfMeUnprotected();
+        _update(balance0, balance1);
         emit Swap(msg.sender, to);
     }
 }
