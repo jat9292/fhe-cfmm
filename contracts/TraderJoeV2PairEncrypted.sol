@@ -125,7 +125,10 @@ contract TraderJoeV2PairEncrypted is LBToken {
             {
                 require(initialized || liquidities[indexLiq]>=MINIMUM_LIQUIDITY, "Not enough liquidity provided");
 
-                euint32 amount0Used = TFHE.asEuint32((liquidities[indexLiq]/2)/binToPrice(index) + 1);  // put equivalent quantities of both tokens in the active bin
+                euint32 amount0Used = TFHE.asEuint32((liquidities[indexLiq]/2)/binToPrice(index) + 1);  // put equivalent quantities of both tokens in the active bin, 
+                                    // this simple solution allows not leak confidentiality by avoiding decryption of the proportion of amount0 and amount1 of the composition of the active bin
+                                    // but for a more efficient solution, we would like to decrypt the composition of the active bin to provide amount0 and amount1 in the same proportions as the current composition
+                                    // this can be acceptable if we fragment the liquidity of a pair in two pools and add a router to choose between each. Pool1 would accept swap tx on even block no and add/remove liq on odd block no, and the opposite direction for Pool2
                 euint32 amount1Used =  TFHE.asEuint32((liquidities[indexLiq]/2)/1e2 + 1);
                 amount0 = amount0 - amount0Used;
                 amount1 = amount1 - amount1Used;
@@ -152,6 +155,8 @@ contract TraderJoeV2PairEncrypted is LBToken {
 
         emit Mint(msg.sender, to);
     }
+
+    /// TODO : add burn : this would leak confidentiality if called on the active bin, because the active bin composition must be preserved here, so to do this correctly, use the (Pool1+Pool2+Router) solution as discussed in the mint function 
 
     // this low-level function should be called from a contract which performs important safety checks
     function swap(address to, euint32 amount0, euint32 amount1 ) external lock onlyRouter {

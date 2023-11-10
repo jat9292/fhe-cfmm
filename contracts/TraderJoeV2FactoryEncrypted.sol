@@ -57,7 +57,7 @@ contract TraderJoeV2FactoryEncrypted {
         address tokenB,
         bytes calldata amountAIn,
         bytes calldata amountBIn,
-        uint32[] calldata liquidities,
+        uint32[] calldata liquidities, // this allows slippage protection already
         uint8[] calldata indexLiquidities,
         address to,
         uint deadline
@@ -76,8 +76,8 @@ contract TraderJoeV2FactoryEncrypted {
     function swap(
         address tokenA,
         address tokenB,
-        bytes calldata amountAIn,
-        bytes calldata amountBIn,
+        bytes calldata amountAIn, // exact amount we want to to sell
+        bytes calldata amountBIn, // exact amount we want to to sell, either amountAIn or amountBIn must be null
         address to,
         uint deadline
     ) external ensure(deadline) {
@@ -91,6 +91,11 @@ contract TraderJoeV2FactoryEncrypted {
         IEncryptedERC20(tokenB).transferFrom(msg.sender, pair, eamountBIn);
         (euint32 eamount0In, euint32 eamount1In) = tokenA < tokenB ? (eamountAIn, eamountBIn) : (eamountBIn, eamountAIn);
         ITraderJoeV2PairEncrypted(pair).swap(to, eamount0In, eamount1In);
+
+        // TODO : add slippage protection : add two arguments to the factory swap function "amount1Min" and "amount2Min"
+        // then,  this can be done by first transferring the received tokens to this factory contract : change first argument of ITraderJoeV2PairEncrypted(pair).swap : use "address(this)" instead of "to"
+        // and then checking that receveived balances (using balanceOfMeUnprotected) are above amountAMin and amountBMin, 
+        // and finally transferring the received amounts back to the "to" address, after the previous slippage check
     } 
 
 }
