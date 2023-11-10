@@ -35,7 +35,7 @@ contract TraderJoeV2PairEncrypted is LBToken {
         euint32 amount1;
     }
 
-    ActiveBin public activeBin;
+    ActiveBin private activeBin;
 
 
     uint private unlocked = 1;
